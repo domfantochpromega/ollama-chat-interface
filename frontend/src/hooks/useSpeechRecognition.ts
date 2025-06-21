@@ -75,9 +75,10 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
         }
         
         silenceTimeoutRef.current = setTimeout(() => {
-          if (currentTranscript.trim() && onSpeechCompleteRef.current) {
+          const latestTranscript = transcript || currentTranscript
+          if (latestTranscript.trim() && onSpeechCompleteRef.current) {
             recognition.stop()
-            onSpeechCompleteRef.current(currentTranscript)
+            onSpeechCompleteRef.current(latestTranscript)
           }
         }, 5000)
       }

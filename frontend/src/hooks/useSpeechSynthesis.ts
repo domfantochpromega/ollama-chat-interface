@@ -73,7 +73,7 @@ export const useSpeechSynthesis = (): SpeechSynthesisHook => {
     utteranceRef.current = utterance
 
     utterance.lang = 'pt-BR'
-    utterance.rate = 0.9
+    utterance.rate = 1.3
     utterance.pitch = 1
     utterance.volume = 1
 
@@ -85,11 +85,25 @@ export const useSpeechSynthesis = (): SpeechSynthesisHook => {
     }
 
     const voices = window.speechSynthesis.getVoices()
+    
+    const brazilianVoice = voices.find(voice => 
+      voice.lang === 'pt-BR' || voice.lang === 'pt_BR'
+    )
+    
     const portugueseVoice = voices.find(voice => 
       voice.lang.includes('pt') || voice.lang.includes('PT')
     )
     
-    if (portugueseVoice) {
+    const naturalVoice = voices.find(voice => 
+      (voice.lang === 'pt-BR' || voice.lang === 'pt_BR') && 
+      (voice.name.includes('Female') || voice.name.includes('Feminina') || voice.name.includes('Maria'))
+    )
+    
+    if (naturalVoice) {
+      utterance.voice = naturalVoice
+    } else if (brazilianVoice) {
+      utterance.voice = brazilianVoice
+    } else if (portugueseVoice) {
       utterance.voice = portugueseVoice
     }
 
