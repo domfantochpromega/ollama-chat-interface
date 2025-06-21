@@ -1,11 +1,12 @@
-import { useState, useRef, useEffect } from 'react'
-import { Send, Paperclip, X, Bot, User, Mic, MicOff, Volume2, VolumeX } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Send, Paperclip, X, Bot, User, Mic, MicOff, Volume2, VolumeX, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
 import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis'
 
@@ -43,7 +44,12 @@ function App() {
     stopListening, 
     resetTranscript,
     error: speechError,
-    isSupported: speechRecognitionSupported
+    isSupported: speechRecognitionSupported,
+    microphoneMode,
+    setMicrophoneMode,
+    startPushToTalk,
+    stopPushToTalk,
+    setOnSpeechComplete
   } = useSpeechRecognition()
   
   const { 
@@ -57,66 +63,7 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
-
-  useEffect(() => {
-    if (transcript && !isListening) {
-      setInputMessage(prev => prev + (prev ? ' ' : '') + transcript)
-      resetTranscript()
-    }
-  }, [transcript, isListening, resetTranscript])
-
-  useEffect(() => {
-    if (speechError) {
-      setError(speechError)
-    }
-  }, [speechError])
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files
-    if (!files) return
-
-    setError(null)
-    
-    for (const file of Array.from(files)) {
-      try {
-        const formData = new FormData()
-        formData.append('file', file)
-
-        const response = await fetch(`${API_URL}/api/upload`, {
-          method: 'POST',
-          body: formData,
-        })
-
-        if (!response.ok) {
-          throw new Error(`Upload failed: ${response.statusText}`)
-        }
-
-        const result = await response.json()
-        setUploadedFiles(prev => [...prev, {
-          id: result.file_id,
-          name: result.filename,
-          size: result.size,
-          content: result.content
-        }])
-      } catch (error) {
-        console.error('File upload error:', error)
-        setError(`Failed to upload ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      }
-    }
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
-  }
-
-  const removeFile = (fileId: string) => {
-    setUploadedFiles(prev => prev.filter(f => f.id !== fileId))
-  }
-
-  const sendMessage = async () => {
+  const sendMessage = useCallback(async () => {
     if (!inputMessage.trim() && uploadedFiles.length === 0) return
 
     setError(null)
@@ -192,7 +139,80 @@ function App() {
     } finally {
       setIsLoading(false)
     }
+  }, [inputMessage, uploadedFiles, conversationId, autoSpeak, speechSynthesisSupported, speak])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
+
+  useEffect(() => {
+    if (transcript && !isListening && microphoneMode === 'push-to-talk') {
+      setInputMessage(prev => prev + (prev ? ' ' : '') + transcript)
+      resetTranscript()
+    }
+  }, [transcript, isListening, resetTranscript, microphoneMode])
+
+  useEffect(() => {
+    setOnSpeechComplete((finalTranscript: string) => {
+      setInputMessage(finalTranscript)
+      resetTranscript()
+      setTimeout(() => {
+        if (finalTranscript.trim()) {
+          sendMessage()
+        }
+      }, 100)
+    })
+  }, [resetTranscript, sendMessage])
+
+  useEffect(() => {
+    if (speechError) {
+      setError(speechError)
+    }
+  }, [speechError])
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files
+    if (!files) return
+
+    setError(null)
+    
+    for (const file of Array.from(files)) {
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+
+        const response = await fetch(`${API_URL}/api/upload`, {
+          method: 'POST',
+          body: formData,
+        })
+
+        if (!response.ok) {
+          throw new Error(`Upload failed: ${response.statusText}`)
+        }
+
+        const result = await response.json()
+        setUploadedFiles(prev => [...prev, {
+          id: result.file_id,
+          name: result.filename,
+          size: result.size,
+          content: result.content
+        }])
+      } catch (error) {
+        console.error('File upload error:', error)
+        setError(`Failed to upload ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      }
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
   }
+
+  const removeFile = (fileId: string) => {
+    setUploadedFiles(prev => prev.filter(f => f.id !== fileId))
+  }
+
+
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -202,10 +222,24 @@ function App() {
   }
 
   const toggleVoiceRecording = () => {
-    if (isListening) {
-      stopListening()
-    } else {
-      startListening()
+    if (microphoneMode === 'auto-detect') {
+      if (isListening) {
+        stopListening()
+      } else {
+        startListening()
+      }
+    }
+  }
+
+  const handlePushToTalkStart = () => {
+    if (microphoneMode === 'push-to-talk') {
+      startPushToTalk()
+    }
+  }
+
+  const handlePushToTalkEnd = () => {
+    if (microphoneMode === 'push-to-talk') {
+      stopPushToTalk()
     }
   }
 
@@ -321,7 +355,8 @@ function App() {
             <Alert className="mb-4 border-blue-200 bg-blue-50">
               <AlertDescription className="text-blue-800 flex items-center gap-2">
                 <div className="animate-pulse w-2 h-2 bg-red-500 rounded-full"></div>
-                Ouvindo... {transcript && `"${transcript}"`}
+                {microphoneMode === 'push-to-talk' ? 'Pressione e mantenha o microfone...' : 'Ouvindo... (para automaticamente após 5s de silêncio)'} 
+                {transcript && `"${transcript}"`}
               </AlertDescription>
             </Alert>
           )}
@@ -347,6 +382,22 @@ function App() {
             </div>
           )}
 
+          {speechRecognitionSupported && (
+            <div className="mb-4 flex items-center gap-2">
+              <Settings className="w-4 h-4 text-gray-500" />
+              <span className="text-sm text-gray-600">Modo do microfone:</span>
+              <Select value={microphoneMode} onValueChange={(value: 'push-to-talk' | 'auto-detect') => setMicrophoneMode(value)}>
+                <SelectTrigger className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="push-to-talk">Pressionar e Manter</SelectItem>
+                  <SelectItem value="auto-detect">Detecção Automática</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div className="flex gap-2">
             <Button
               variant="outline"
@@ -358,13 +409,30 @@ function App() {
               <Paperclip className="w-4 h-4" />
             </Button>
             
-            {speechRecognitionSupported && (
+            {speechRecognitionSupported && microphoneMode === 'push-to-talk' && (
+              <Button
+                variant={isListening ? "default" : "outline"}
+                size="sm"
+                onMouseDown={handlePushToTalkStart}
+                onMouseUp={handlePushToTalkEnd}
+                onMouseLeave={handlePushToTalkEnd}
+                onTouchStart={handlePushToTalkStart}
+                onTouchEnd={handlePushToTalkEnd}
+                disabled={isLoading}
+                title="Pressione e mantenha para falar"
+                className={isListening ? "bg-red-600 hover:bg-red-700 text-white animate-pulse" : ""}
+              >
+                {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </Button>
+            )}
+
+            {speechRecognitionSupported && microphoneMode === 'auto-detect' && (
               <Button
                 variant={isListening ? "default" : "outline"}
                 size="sm"
                 onClick={toggleVoiceRecording}
                 disabled={isLoading}
-                title={isListening ? "Parar gravação" : "Gravar voz"}
+                title={isListening ? "Parar gravação" : "Iniciar gravação (envia após 5s de silêncio)"}
                 className={isListening ? "bg-red-600 hover:bg-red-700 text-white animate-pulse" : ""}
               >
                 {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
@@ -397,7 +465,11 @@ function App() {
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder={isListening ? "Falando..." : "Digite sua mensagem ou use o microfone..."}
+              placeholder={
+                isListening 
+                  ? (microphoneMode === 'push-to-talk' ? "Mantenha o botão pressionado..." : "Falando... (envia após 5s de silêncio)")
+                  : "Digite sua mensagem ou use o microfone..."
+              }
               disabled={isLoading}
               className="flex-1"
             />

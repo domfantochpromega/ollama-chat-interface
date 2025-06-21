@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
+type MicrophoneMode = 'push-to-talk' | 'auto-detect'
+
 interface SpeechRecognitionHook {
   isListening: boolean
   transcript: string
@@ -8,6 +10,12 @@ interface SpeechRecognitionHook {
   resetTranscript: () => void
   error: string | null
   isSupported: boolean
+  microphoneMode: MicrophoneMode
+  setMicrophoneMode: (mode: MicrophoneMode) => void
+  startPushToTalk: () => void
+  stopPushToTalk: () => void
+  onSpeechComplete?: (transcript: string) => void
+  setOnSpeechComplete: (callback: (transcript: string) => void) => void
 }
 
 declare global {
@@ -21,7 +29,10 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
   const [isListening, setIsListening] = useState(false)
   const [transcript, setTranscript] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [microphoneMode, setMicrophoneMode] = useState<MicrophoneMode>('push-to-talk')
   const recognitionRef = useRef<any>(null)
+  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const onSpeechCompleteRef = useRef<((transcript: string) => void) | undefined>()
 
   const isSupported = typeof window !== 'undefined' && 
     (window.SpeechRecognition || window.webkitSpeechRecognition)
@@ -55,7 +66,21 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
         }
       }
 
-      setTranscript(finalTranscript || interimTranscript)
+      const currentTranscript = finalTranscript || interimTranscript
+      setTranscript(currentTranscript)
+
+      if (microphoneMode === 'auto-detect' && currentTranscript.trim()) {
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current)
+        }
+        
+        silenceTimeoutRef.current = setTimeout(() => {
+          if (currentTranscript.trim() && onSpeechCompleteRef.current) {
+            recognition.stop()
+            onSpeechCompleteRef.current(currentTranscript)
+          }
+        }, 5000)
+      }
     }
 
     recognition.onerror = (event: any) => {
@@ -65,14 +90,21 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
 
     recognition.onend = () => {
       setIsListening(false)
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current)
+        silenceTimeoutRef.current = null
+      }
     }
 
     return () => {
       if (recognition) {
         recognition.stop()
       }
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current)
+      }
     }
-  }, [isSupported])
+  }, [isSupported, microphoneMode])
 
   const startListening = useCallback(() => {
     if (!isSupported) {
@@ -96,6 +128,29 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
   const resetTranscript = useCallback(() => {
     setTranscript('')
     setError(null)
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current)
+      silenceTimeoutRef.current = null
+    }
+  }, [])
+
+  const startPushToTalk = useCallback(() => {
+    if (microphoneMode === 'push-to-talk') {
+      startListening()
+    }
+  }, [microphoneMode, startListening])
+
+  const stopPushToTalk = useCallback(() => {
+    if (microphoneMode === 'push-to-talk' && isListening) {
+      stopListening()
+      if (transcript.trim() && onSpeechCompleteRef.current) {
+        onSpeechCompleteRef.current(transcript)
+      }
+    }
+  }, [microphoneMode, isListening, transcript, stopListening])
+
+  const setOnSpeechComplete = useCallback((callback: (transcript: string) => void) => {
+    onSpeechCompleteRef.current = callback
   }, [])
 
   return {
@@ -105,6 +160,12 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
     stopListening,
     resetTranscript,
     error,
-    isSupported
+    isSupported,
+    microphoneMode,
+    setMicrophoneMode,
+    startPushToTalk,
+    stopPushToTalk,
+    onSpeechComplete: onSpeechCompleteRef.current,
+    setOnSpeechComplete
   }
 }
