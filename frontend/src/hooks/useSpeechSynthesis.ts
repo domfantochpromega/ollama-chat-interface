@@ -11,11 +11,27 @@ interface SpeechSynthesisHook {
 
 export const useSpeechSynthesis = (): SpeechSynthesisHook => {
   const [speaking, setSpeaking] = useState(false)
+  const [voicesLoaded, setVoicesLoaded] = useState(false)
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
 
   const isSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
 
   useEffect(() => {
+    if (!isSupported) return
+
+    const loadVoices = () => {
+      const voices = window.speechSynthesis.getVoices()
+      if (voices.length > 0) {
+        setVoicesLoaded(true)
+      }
+    }
+
+    loadVoices()
+
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = loadVoices
+    }
+
     const handleSpeechEnd = () => {
       setSpeaking(false)
     }
@@ -35,11 +51,17 @@ export const useSpeechSynthesis = (): SpeechSynthesisHook => {
         utteranceRef.current.removeEventListener('start', handleSpeechStart)
       }
     }
-  }, [])
+  }, [isSupported])
 
   const speak = useCallback((text: string) => {
     if (!isSupported) {
       console.warn('Síntese de voz não é suportada neste navegador')
+      return
+    }
+
+    if (!voicesLoaded) {
+      console.warn('Vozes ainda não foram carregadas')
+      setTimeout(() => speak(text), 100)
       return
     }
 
@@ -57,7 +79,10 @@ export const useSpeechSynthesis = (): SpeechSynthesisHook => {
 
     utterance.onstart = () => setSpeaking(true)
     utterance.onend = () => setSpeaking(false)
-    utterance.onerror = () => setSpeaking(false)
+    utterance.onerror = (e) => {
+      console.error('Erro na síntese de voz:', e)
+      setSpeaking(false)
+    }
 
     const voices = window.speechSynthesis.getVoices()
     const portugueseVoice = voices.find(voice => 
@@ -69,7 +94,7 @@ export const useSpeechSynthesis = (): SpeechSynthesisHook => {
     }
 
     window.speechSynthesis.speak(utterance)
-  }, [isSupported])
+  }, [isSupported, voicesLoaded])
 
   const stop = useCallback(() => {
     if (isSupported && window.speechSynthesis.speaking) {
