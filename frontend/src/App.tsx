@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Paperclip, X, Bot, User } from 'lucide-react'
+import { Send, Paperclip, X, Bot, User, Mic, MicOff, Volume2, VolumeX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
+import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis'
 
 interface Message {
   id: string
@@ -28,10 +30,28 @@ function App() {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [autoSpeak, setAutoSpeak] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
+  const { 
+    isListening, 
+    transcript, 
+    startListening, 
+    stopListening, 
+    resetTranscript,
+    error: speechError,
+    isSupported: speechRecognitionSupported
+  } = useSpeechRecognition()
+  
+  const { 
+    speak, 
+    speaking, 
+    stop: stopSpeaking,
+    isSupported: speechSynthesisSupported
+  } = useSpeechSynthesis()
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -40,6 +60,19 @@ function App() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  useEffect(() => {
+    if (transcript && !isListening) {
+      setInputMessage(prev => prev + (prev ? ' ' : '') + transcript)
+      resetTranscript()
+    }
+  }, [transcript, isListening, resetTranscript])
+
+  useEffect(() => {
+    if (speechError) {
+      setError(speechError)
+    }
+  }, [speechError])
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files
@@ -149,6 +182,10 @@ function App() {
       setMessages(prev => [...prev, assistantMessage])
       setUploadedFiles([])
 
+      if (autoSpeak && speechSynthesisSupported) {
+        speak(result.response)
+      }
+
     } catch (error) {
       console.error('Chat error:', error)
       setError(`Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -161,6 +198,22 @@ function App() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       sendMessage()
+    }
+  }
+
+  const toggleVoiceRecording = () => {
+    if (isListening) {
+      stopListening()
+    } else {
+      startListening()
+    }
+  }
+
+  const handleSpeakMessage = (messageContent: string) => {
+    if (speaking) {
+      stopSpeaking()
+    } else {
+      speak(messageContent)
     }
   }
 
@@ -201,7 +254,24 @@ function App() {
                   </div>
                   <Card className={`${message.type === 'user' ? 'bg-blue-600 text-white' : 'bg-white'}`}>
                     <CardContent className="p-3">
-                      <p className="whitespace-pre-wrap">{message.content}</p>
+                      <div className="flex justify-between items-start gap-2">
+                        <p className="whitespace-pre-wrap flex-1">{message.content}</p>
+                        {message.type === 'assistant' && speechSynthesisSupported && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 hover:bg-gray-100"
+                            onClick={() => handleSpeakMessage(message.content)}
+                            title={speaking ? "Parar reprodução" : "Reproduzir com voz"}
+                          >
+                            {speaking ? (
+                              <VolumeX className="h-3 w-3" />
+                            ) : (
+                              <Volume2 className="h-3 w-3" />
+                            )}
+                          </Button>
+                        )}
+                      </div>
                       <p className={`text-xs mt-2 ${message.type === 'user' ? 'text-blue-100' : 'text-gray-500'}`}>
                         {message.timestamp.toLocaleTimeString()}
                       </p>
@@ -239,6 +309,23 @@ function App() {
             </Alert>
           )}
 
+          {!speechRecognitionSupported && (
+            <Alert className="mb-4 border-yellow-200 bg-yellow-50">
+              <AlertDescription className="text-yellow-800">
+                Reconhecimento de voz não é suportado neste navegador. Use Chrome ou Edge para melhor experiência.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {isListening && (
+            <Alert className="mb-4 border-blue-200 bg-blue-50">
+              <AlertDescription className="text-blue-800 flex items-center gap-2">
+                <div className="animate-pulse w-2 h-2 bg-red-500 rounded-full"></div>
+                Ouvindo... {transcript && `"${transcript}"`}
+              </AlertDescription>
+            </Alert>
+          )}
+
           {uploadedFiles.length > 0 && (
             <div className="mb-4">
               <p className="text-sm text-gray-600 mb-2">Uploaded files:</p>
@@ -266,9 +353,36 @@ function App() {
               size="sm"
               onClick={() => fileInputRef.current?.click()}
               disabled={isLoading}
+              title="Anexar arquivo"
             >
               <Paperclip className="w-4 h-4" />
             </Button>
+            
+            {speechRecognitionSupported && (
+              <Button
+                variant={isListening ? "default" : "outline"}
+                size="sm"
+                onClick={toggleVoiceRecording}
+                disabled={isLoading}
+                title={isListening ? "Parar gravação" : "Gravar voz"}
+                className={isListening ? "bg-red-600 hover:bg-red-700 text-white animate-pulse" : ""}
+              >
+                {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </Button>
+            )}
+
+            {speechSynthesisSupported && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAutoSpeak(!autoSpeak)}
+                disabled={isLoading}
+                title={autoSpeak ? "Desabilitar resposta automática por voz" : "Habilitar resposta automática por voz"}
+                className={autoSpeak ? "bg-green-50 border-green-200" : ""}
+              >
+                {autoSpeak ? <Volume2 className="w-4 h-4 text-green-600" /> : <VolumeX className="w-4 h-4" />}
+              </Button>
+            )}
             
             <Input
               ref={fileInputRef}
@@ -283,7 +397,7 @@ function App() {
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Type your message..."
+              placeholder={isListening ? "Falando..." : "Digite sua mensagem ou use o microfone..."}
               disabled={isLoading}
               className="flex-1"
             />
@@ -291,6 +405,7 @@ function App() {
             <Button
               onClick={sendMessage}
               disabled={isLoading || (!inputMessage.trim() && uploadedFiles.length === 0)}
+              title="Enviar mensagem"
             >
               <Send className="w-4 h-4" />
             </Button>
