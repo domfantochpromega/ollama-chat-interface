@@ -1,0 +1,1 @@
+This is a test file for the Ollama chat interface. It contains sample text that should be extracted and processed by the AI.

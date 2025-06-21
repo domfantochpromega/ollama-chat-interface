@@ -7,15 +7,19 @@ Uma aplicação web completa similar ao ChatGPT que utiliza a API do Ollama loca
 - **Frontend:** https://ollama-chat-app-0zfvvz5x.devinapps.com/
 - **Backend API:** https://app-uwtrbisq.fly.dev/
 
+⚠️ **IMPORTANTE:** A aplicação deployada não consegue conectar com seu Ollama local. Para usar com seu Ollama, execute a aplicação localmente seguindo as instruções abaixo.
+
 ## 📋 Funcionalidades
 
 ### Backend (FastAPI + Python)
-- ✅ Comunicação com API Ollama local (http://localhost:11434)
+- ✅ Comunicação com API Ollama local (configurável via OLLAMA_BASE_URL)
+- ✅ Suporte a streaming e não-streaming (compatível com PHP)
 - ✅ Upload de múltiplos arquivos (imagens, áudio, vídeo, ZIP, texto, etc.)
 - ✅ Extração automática de conteúdo dos arquivos
 - ✅ Sistema de memória de conversas persistente
 - ✅ Endpoints REST: `/api/chat`, `/api/upload`, `/api/chat-with-files`
 - ✅ Tratamento de erros e timeouts
+- ✅ Implementação idêntica ao código PHP fornecido
 
 ### Frontend (React + TypeScript)
 - ✅ Interface moderna similar ao ChatGPT
@@ -100,6 +104,22 @@ ollama serve
 
 # Instale um modelo
 ollama pull llama3.2
+```
+
+### Configuração de Porta Personalizada
+Se o seu Ollama estiver rodando em uma porta diferente da padrão (11434), configure a variável de ambiente:
+
+**Para desenvolvimento local:**
+```bash
+# No diretório do backend, crie um arquivo .env:
+echo "OLLAMA_BASE_URL=http://localhost:8080" > .env
+# Substitua 8080 pela porta que você está usando
+```
+
+**Para deploy:**
+```bash
+# Configure a variável de ambiente no seu provedor de deploy
+OLLAMA_BASE_URL=http://seu-ip:sua-porta
 ```
 
 ## 📁 Estrutura do Projeto
